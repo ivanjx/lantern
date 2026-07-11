@@ -1,6 +1,6 @@
 namespace Lantern.Devices;
 
-internal enum DeviceStatus
+public enum DeviceStatus
 {
     Unknown = 0,
     Trusted = 1,

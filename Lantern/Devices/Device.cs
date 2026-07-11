@@ -1,6 +1,6 @@
 namespace Lantern.Devices;
 
-internal sealed record Device(
+public sealed record Device(
     string MacAddress,
     string? FriendlyName,
     DeviceStatus Status,

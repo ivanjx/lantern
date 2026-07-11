@@ -54,6 +54,66 @@ public sealed class DeviceRepositoryTests : IDisposable
         Assert.IsType<InvalidMacAddressRepositoryErrorResult>(result);
     }
 
+    [Fact]
+    public async Task GetRegistryAsync_SortsUnknownFirstThenMostRecentlySeenAndCountsStatuses()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var now = DateTimeOffset.Parse("2026-07-11T10:00:00Z");
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:01", null, "old-unknown", now));
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:02", null, "trusted", now.AddMinutes(2)));
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:03", null, "new-unknown", now.AddMinutes(1)));
+        await repository.SetStatusAsync("00:00:00:00:00:02", DeviceStatus.Trusted);
+
+        var result = await repository.GetRegistryAsync();
+
+        var registry = Assert.IsType<RepositoryResult<DeviceRegistry>>(result).Value;
+        Assert.Equal(2, registry.UnknownCount);
+        Assert.Equal(1, registry.TrustedCount);
+        Assert.Equal(
+            ["00:00:00:00:00:03", "00:00:00:00:00:01", "00:00:00:00:00:02"],
+            registry.Devices.Select(device => device.MacAddress));
+    }
+
+    [Fact]
+    public async Task StatusAndRenameMutations_UpdateExistingDeviceAndReportMissingDevice()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.UpsertObservationAsync(new("AA:BB:CC:DD:EE:FF", null, "phone", DateTimeOffset.UtcNow));
+
+        var statusResult = await repository.SetStatusAsync("aabbccddeeff", DeviceStatus.Ignored);
+        var renameResult = await repository.RenameAsync("AA-BB-CC-DD-EE-FF", "Guest phone");
+        var missingResult = await repository.RenameAsync("00:00:00:00:00:00", "Missing");
+
+        Assert.IsType<SuccessRepositoryResult>(statusResult);
+        Assert.IsType<SuccessRepositoryResult>(renameResult);
+        Assert.IsType<DeviceNotFoundRepositoryErrorResult>(missingResult);
+        var device = Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync("AA:BB:CC:DD:EE:FF")).Value;
+        Assert.Equal(DeviceStatus.Ignored, device!.Status);
+        Assert.Equal("Guest phone", device.FriendlyName);
+
+        var resetResult = await repository.SetStatusAsync("AA:BB:CC:DD:EE:FF", DeviceStatus.Unknown);
+
+        Assert.IsType<SuccessRepositoryResult>(resetResult);
+        device = Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync("AA:BB:CC:DD:EE:FF")).Value;
+        Assert.Equal(DeviceStatus.Unknown, device!.Status);
+    }
+
+    [Fact]
+    public async Task RenameAsync_ClearsFriendlyName()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.UpsertObservationAsync(new("AA:BB:CC:DD:EE:FF", null, null, DateTimeOffset.UtcNow));
+        await repository.RenameAsync("AA:BB:CC:DD:EE:FF", "Phone");
+
+        await repository.RenameAsync("AA:BB:CC:DD:EE:FF", null);
+
+        var device = Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync("AA:BB:CC:DD:EE:FF")).Value;
+        Assert.Null(device!.FriendlyName);
+    }
+
     private DeviceRepository CreateRepository() => new(
         Options.Create(new DatabaseOptions { Path = Path.Combine(_directory, "lantern.db") }),
         NullLogger<DeviceRepository>.Instance);

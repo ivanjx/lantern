@@ -1,5 +1,6 @@
 using Lantern;
 using Lantern.Configuration;
+using Lantern.Dashboard;
 using Lantern.Devices;
 using Lantern.MikroTik;
 using Lantern.Monitoring;
@@ -85,13 +86,27 @@ builder.Services
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PollStatus>();
 builder.Services.AddSingleton<HealthHandler>();
+builder.Services.AddSingleton<DashboardHandler>();
 builder.Services.AddHostedService<DeviceMonitorJob>();
 
 var app = builder.Build();
 
 await app.Services.GetRequiredService<DeviceRepository>().InitializeAsync();
 
-app.MapGet("/", () => Results.RazorSlice<Home>());
+app.UseStaticFiles();
+
+app.MapGet("/", (DashboardHandler handler, string? feedback, CancellationToken cancellationToken) =>
+    handler.GetAsync(feedback, cancellationToken));
+app.MapPost("/devices/{mac}/trust", (DashboardHandler handler, string mac, CancellationToken cancellationToken) =>
+    handler.TrustAsync(mac, cancellationToken));
+app.MapPost("/devices/{mac}/ignore", (DashboardHandler handler, string mac, CancellationToken cancellationToken) =>
+    handler.IgnoreAsync(mac, cancellationToken));
+app.MapPost("/devices/{mac}/untrust", (DashboardHandler handler, string mac, CancellationToken cancellationToken) =>
+    handler.UntrustAsync(mac, cancellationToken));
+app.MapPost("/devices/{mac}/unignore", (DashboardHandler handler, string mac, CancellationToken cancellationToken) =>
+    handler.UnignoreAsync(mac, cancellationToken));
+app.MapPost("/devices/{mac}/rename", (DashboardHandler handler, string mac, HttpRequest request, CancellationToken cancellationToken) =>
+    handler.RenameAsync(mac, request, cancellationToken));
 app.MapGet("/health", (HealthHandler handler, CancellationToken cancellationToken) =>
     handler.HandleAsync(cancellationToken));
 

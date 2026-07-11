@@ -1,15 +1,160 @@
-@inherits RazorSlice
+@inherits RazorSlice<Lantern.Dashboard.DashboardViewModel>
+@using Lantern.Devices
+@using System.Globalization
+@functions {
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+    private static string LocalTime(DateTimeOffset? value) => value?.ToLocalTime().ToString("dd MMM yyyy, HH:mm", CultureInfo.CurrentCulture) ?? "Not yet";
+    private static string StatusName(DeviceStatus status) => status.ToString();
+}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lantern</title>
+    <meta name="theme-color" content="#0b1017" />
+    <title>Lantern device registry</title>
+    <link rel="stylesheet" href="/css/lantern.css" />
 </head>
 <body>
-    <main>
-        <h1>Lantern</h1>
-        <p>The server and device registry are ready. Network polling is not configured yet.</p>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a class="brand" href="/" aria-label="Lantern home">
+                <svg class="brand-mark" viewBox="0 0 32 40" aria-hidden="true">
+                    <path d="M12 3h8M10 8h12l3 7-2 19H9L7 15l3-7Zm-1 8h10M9 29h14M12 34v3h8v-3" />
+                </svg>
+                <span>Lantern</span>
+            </a>
+            <div class="monitor-state">
+                <span class="status-dot @(Model.IsHealthy ? "healthy" : "waiting")"></span>
+                <span>@(Model.IsHealthy ? "Monitoring healthy" : Model.LastPollError is not null ? "Polling issue" : "Awaiting first poll")</span>
+                <span class="header-divider" aria-hidden="true"></span>
+                <span class="poll-time">Last successful poll: @LocalTime(Model.LastSuccessfulPollUtc)</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container page-content">
+        <h1 class="visually-hidden">Lantern device registry</h1>
+
+        <section class="feedback" aria-label="Status messages">
+            @if (Model.Feedback is not null)
+            {
+                <div class="alert @(Model.Feedback.IsError ? "alert-error" : "alert-success")" role="status">
+                    <span aria-hidden="true">@(Model.Feedback.IsError ? "!" : "✓")</span>
+                    <span>@Model.Feedback.Message</span>
+                </div>
+            }
+            @if (Model.LastPollError is not null)
+            {
+                <div class="alert alert-error" role="alert">
+                    <span aria-hidden="true">!</span>
+                    <span><strong>The most recent poll failed.</strong> @Model.LastPollError Older device data remains available.</span>
+                </div>
+            }
+            @if (!Model.InitialScanCompleted)
+            {
+                <div class="alert alert-notice" role="status">
+                    <span aria-hidden="true">!</span>
+                    <span><strong>Initial baseline is in progress.</strong> Existing devices will appear here after the first successful scan.</span>
+                </div>
+            }
+            else if (Model.UnknownCount > 0)
+            {
+                <div class="alert alert-notice" role="status">
+                    <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-2.9 2-2.9 4M12 18h.01" /></svg></span>
+                    <span><strong>Device review needed</strong> — @Model.UnknownCount unknown @(Model.UnknownCount == 1 ? "device still needs" : "devices still need") review.</span>
+                </div>
+            }
+        </section>
+
+        <section class="summary-grid" aria-label="Monitoring summary">
+            <article class="summary-card">
+                <span class="summary-icon unknown" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-2.9 2-2.9 4M12 18h.01" /></svg></span>
+                <div><span class="summary-label">Unknown devices</span><strong>@Model.UnknownCount</strong><span class="summary-note">Need review</span></div>
+            </article>
+            <article class="summary-card">
+                <span class="summary-icon trusted" aria-hidden="true">✓</span>
+                <div><span class="summary-label">Trusted devices</span><strong>@Model.TrustedCount</strong><span class="summary-note">Connected and trusted</span></div>
+            </article>
+            <article class="summary-card">
+                <span class="summary-icon monitoring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" /></svg></span>
+                <div><span class="summary-label">Monitoring</span><strong class="health-text">@(Model.IsHealthy ? "Healthy" : "Waiting")</strong><span class="summary-note">Last poll: @LocalTime(Model.LastSuccessfulPollUtc)</span></div>
+            </article>
+        </section>
+
+        <section class="registry-panel" aria-labelledby="registry-title">
+            <div class="panel-heading">
+                <h2 id="registry-title">Device registry</h2>
+                <p>Review newly observed devices and trust the ones you recognize.</p>
+            </div>
+
+            @if (Model.Devices.Count == 0)
+            {
+                <div class="empty-state">
+                    <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" /></svg></span>
+                    <h3>No devices observed yet</h3>
+                    <p>Lantern will list active DHCP devices after a successful MikroTik poll.</p>
+                </div>
+            }
+            else
+            {
+                <div class="device-list">
+                    <table>
+                        <thead><tr><th>Status</th><th>Device</th><th>Network</th><th>First seen</th><th>Last seen</th><th>Actions</th></tr></thead>
+                        <tbody>
+                        @foreach (var device in Model.Devices)
+                        {
+                            var statusClass = device.Status.ToString().ToLowerInvariant();
+                            <tr>
+                                <td data-label="Status"><span class="badge badge-@statusClass">@StatusName(device.Status)</span></td>
+                                <td data-label="Device">
+                                    <div class="device-name-row">
+                                        <strong class="device-name">@Display(device.FriendlyName)</strong>
+                                        <button class="icon-button edit-name" type="button" aria-label="Rename @Display(device.FriendlyName)" title="Rename device">
+                                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.6-10.6a2 2 0 0 0-2.8-2.8L5.4 16.2 4 20Zm10.5-12.9 2.8 2.8" /></svg>
+                                        </button>
+                                    </div>
+                                    <span class="secondary">Hostname: @Display(device.LastHostname)</span>
+                                    <form class="rename-form" method="post" action="/devices/@device.MacAddress/rename" hidden>
+                                        <label class="visually-hidden" for="name-@device.MacAddress.Replace(':', '-')">Friendly name for @device.MacAddress</label>
+                                        <input id="name-@device.MacAddress.Replace(':', '-')" name="friendlyName" value="@device.FriendlyName" maxlength="100" placeholder="Friendly name" />
+                                        <button class="icon-button save-name" type="submit" aria-label="Save device name" title="Save">
+                                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+                                        </button>
+                                        <button class="icon-button cancel-name" type="button" aria-label="Cancel rename" title="Cancel">
+                                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                                        </button>
+                                    </form>
+                                </td>
+                                <td data-label="Network"><span class="mono">@device.MacAddress</span><span class="secondary mono">IP: @Display(device.LastIpAddress)</span></td>
+                                <td data-label="First seen" class="time">@LocalTime(device.FirstSeenUtc)</td>
+                                <td data-label="Last seen" class="time">@LocalTime(device.LastSeenUtc)</td>
+                                <td data-label="Actions">
+                                    <div class="actions">
+                                        @if (device.Status == DeviceStatus.Unknown)
+                                        {
+                                            <form method="post" action="/devices/@device.MacAddress/trust"><button class="button button-primary" type="submit">Trust</button></form>
+                                            <form method="post" action="/devices/@device.MacAddress/ignore"><button class="button button-quiet" type="submit">Ignore</button></form>
+                                        }
+                                        else if (device.Status == DeviceStatus.Trusted)
+                                        {
+                                            <form method="post" action="/devices/@device.MacAddress/untrust"><button class="button button-quiet" type="submit">Untrust</button></form>
+                                        }
+                                        else if (device.Status == DeviceStatus.Ignored)
+                                        {
+                                            <form method="post" action="/devices/@device.MacAddress/unignore"><button class="button button-quiet" type="submit">Unignore</button></form>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="panel-footer"><span>Showing @Model.Devices.Count @(Model.Devices.Count == 1 ? "device" : "devices")</span><span>All times in local time</span></footer>
+            }
+        </section>
     </main>
+    <script src="/js/lantern.js"></script>
 </body>
 </html>

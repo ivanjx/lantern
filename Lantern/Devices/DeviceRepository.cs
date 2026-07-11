@@ -73,6 +73,55 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
         }
     }
 
+    public async Task<RepositoryResult> GetRegistryAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT mac_address, friendly_name, status, first_seen_utc, last_seen_utc,
+                       last_ip_address, last_hostname, last_notification_utc
+                FROM devices
+                ORDER BY CASE WHEN status = $unknown THEN 0 ELSE 1 END,
+                         last_seen_utc DESC,
+                         COALESCE(NULLIF(friendly_name, ''), NULLIF(last_hostname, ''), mac_address) COLLATE NOCASE;
+                """;
+            command.Parameters.AddWithValue("$unknown", (int)DeviceStatus.Unknown);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var devices = new List<Device>();
+            var unknownCount = 0;
+            var trustedCount = 0;
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var device = ReadDevice(reader);
+                devices.Add(device);
+                unknownCount += device.Status == DeviceStatus.Unknown ? 1 : 0;
+                trustedCount += device.Status == DeviceStatus.Trusted ? 1 : 0;
+            }
+
+            return new RepositoryResult<DeviceRegistry>(new DeviceRegistry(devices, unknownCount, trustedCount));
+        }
+        catch (SqliteException exception)
+        {
+            _logger.LogError(exception, "Failed to read device registry");
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public Task<RepositoryResult> SetStatusAsync(
+        string macAddress,
+        DeviceStatus status,
+        CancellationToken cancellationToken = default) =>
+        UpdateDeviceAsync(macAddress, "status = $value", (int)status, cancellationToken);
+
+    public Task<RepositoryResult> RenameAsync(
+        string macAddress,
+        string? friendlyName,
+        CancellationToken cancellationToken = default) =>
+        UpdateDeviceAsync(macAddress, "friendly_name = $value", friendlyName, cancellationToken);
+
     public async Task<RepositoryResult> UpsertObservationAsync(
         DeviceObservation observation,
         CancellationToken cancellationToken = default)
@@ -258,6 +307,35 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;
+    }
+
+    private async Task<RepositoryResult> UpdateDeviceAsync(
+        string macAddress,
+        string assignment,
+        object? value,
+        CancellationToken cancellationToken)
+    {
+        if (!MacAddress.TryNormalize(macAddress, out var normalized))
+        {
+            return new InvalidMacAddressRepositoryErrorResult();
+        }
+
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"UPDATE devices SET {assignment} WHERE mac_address = $macAddress;";
+            command.Parameters.AddWithValue("$macAddress", normalized);
+            command.Parameters.AddWithValue("$value", value ?? DBNull.Value);
+            return await command.ExecuteNonQueryAsync(cancellationToken) == 0 ?
+                new DeviceNotFoundRepositoryErrorResult() :
+                new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            _logger.LogError(exception, "Failed to update device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
     }
 
     private static string CreateConnectionString(string path)
