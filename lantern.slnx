@@ -1,2 +1,4 @@
 <Solution>
+  <Project Path="Lantern/Lantern.csproj" />
+  <Project Path="Lantern.Tests/Lantern.Tests.csproj" />
 </Solution>
