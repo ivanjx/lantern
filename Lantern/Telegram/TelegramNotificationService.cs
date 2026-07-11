@@ -5,27 +5,27 @@ using Microsoft.Extensions.Options;
 namespace Lantern.Telegram;
 
 internal sealed class TelegramNotificationService(
-    ITelegramClient client,
-    DeviceRepository repository,
-    IOptions<TelegramOptions> options,
-    TimeProvider timeProvider,
-    ILogger<TelegramNotificationService> logger)
+    ITelegramClient _client,
+    DeviceRepository _repository,
+    IOptions<TelegramOptions> _options,
+    TimeProvider _timeProvider,
+    ILogger<TelegramNotificationService> _logger)
 {
     public async Task NotifyAsync(Device device, CancellationToken cancellationToken = default)
     {
-        var result = await client.SendMessageAsync(FormatMessage(device, options.Value.PublicBaseUrl), cancellationToken);
+        var result = await _client.SendMessageAsync(FormatMessage(device, _options.Value.PublicBaseUrl), cancellationToken);
 
         if (result is not SuccessServiceResult)
         {
-            logger.LogWarning("Telegram notification remains pending for device {MacAddress}", device.MacAddress);
+            _logger.LogWarning("Telegram notification remains pending for device {MacAddress}", device.MacAddress);
             return;
         }
 
-        var deliveredAtUtc = timeProvider.GetUtcNow();
-        if (await repository.MarkNotificationDeliveredAsync(device.MacAddress, deliveredAtUtc, cancellationToken)
+        var deliveredAtUtc = _timeProvider.GetUtcNow();
+        if (await _repository.MarkNotificationDeliveredAsync(device.MacAddress, deliveredAtUtc, cancellationToken)
             is SuccessRepositoryResult)
         {
-            logger.LogInformation("Telegram notification delivered for device {MacAddress}", device.MacAddress);
+            _logger.LogInformation("Telegram notification delivered for device {MacAddress}", device.MacAddress);
         }
     }
 

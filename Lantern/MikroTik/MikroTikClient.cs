@@ -15,8 +15,8 @@ internal interface IMikroTikClient
 internal sealed class MikroTikClient : IMikroTikClient
 {
     private const string LeasePath = "rest/ip/dhcp-server/lease";
-    private readonly HttpClient httpClient;
-    private readonly ILogger<MikroTikClient> logger;
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<MikroTikClient> _logger;
 
     public MikroTikClient(
         HttpClient httpClient,
@@ -24,14 +24,14 @@ internal sealed class MikroTikClient : IMikroTikClient
         ILogger<MikroTikClient> logger)
     {
         var settings = options.Value;
-        this.httpClient = httpClient;
-        this.logger = logger;
-        this.httpClient.BaseAddress = new Uri(EnsureTrailingSlash(settings.BaseUrl), UriKind.Absolute);
-        this.httpClient.Timeout = TimeSpan.FromSeconds(10);
+        _httpClient = httpClient;
+        _logger = logger;
+        _httpClient.BaseAddress = new Uri(EnsureTrailingSlash(settings.BaseUrl), UriKind.Absolute);
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
 
         var credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{settings.Username}:{settings.Password}"));
-        this.httpClient.DefaultRequestHeaders.Authorization =
+        _httpClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Basic", credentials);
     }
 
@@ -40,17 +40,17 @@ internal sealed class MikroTikClient : IMikroTikClient
     {
         try
         {
-            using var response = await httpClient.GetAsync(LeasePath, cancellationToken);
+            using var response = await _httpClient.GetAsync(LeasePath, cancellationToken);
 
             if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             {
-                logger.LogError("MikroTik request was rejected with HTTP {StatusCode}", (int)response.StatusCode);
+                _logger.LogError("MikroTik request was rejected with HTTP {StatusCode}", (int)response.StatusCode);
                 return new MikroTikUnauthorizedErrorResult();
             }
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogError("MikroTik request failed with HTTP {StatusCode}", (int)response.StatusCode);
+                _logger.LogError("MikroTik request failed with HTTP {StatusCode}", (int)response.StatusCode);
                 return new ErrorServiceResult();
             }
 
@@ -79,17 +79,17 @@ internal sealed class MikroTikClient : IMikroTikClient
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogError(exception, "MikroTik request timed out");
+            _logger.LogError(exception, "MikroTik request timed out");
             return new ErrorServiceResult();
         }
         catch (HttpRequestException exception)
         {
-            logger.LogError(exception, "MikroTik request failed");
+            _logger.LogError(exception, "MikroTik request failed");
             return new ErrorServiceResult();
         }
         catch (System.Text.Json.JsonException exception)
         {
-            logger.LogError(exception, "MikroTik returned an invalid response");
+            _logger.LogError(exception, "MikroTik returned an invalid response");
             return new MikroTikInvalidResponseErrorResult();
         }
     }

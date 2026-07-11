@@ -11,17 +11,17 @@ internal interface ITelegramClient
 
 internal sealed class TelegramClient : ITelegramClient
 {
-    private readonly HttpClient httpClient;
-    private readonly TelegramOptions options;
-    private readonly ILogger<TelegramClient> logger;
+    private readonly HttpClient _httpClient;
+    private readonly TelegramOptions _options;
+    private readonly ILogger<TelegramClient> _logger;
 
     public TelegramClient(HttpClient httpClient, IOptions<TelegramOptions> options, ILogger<TelegramClient> logger)
     {
-        this.httpClient = httpClient;
-        this.options = options.Value;
-        this.logger = logger;
-        this.httpClient.BaseAddress = new Uri("https://api.telegram.org/", UriKind.Absolute);
-        this.httpClient.Timeout = TimeSpan.FromSeconds(10);
+        _httpClient = httpClient;
+        _options = options.Value;
+        _logger = logger;
+        _httpClient.BaseAddress = new Uri("https://api.telegram.org/", UriKind.Absolute);
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
     public async Task<ServiceResult> SendMessageAsync(
@@ -30,9 +30,9 @@ internal sealed class TelegramClient : ITelegramClient
     {
         try
         {
-            var request = new TelegramSendMessageRequest(options.ChatId, message);
-            using var response = await httpClient.PostAsJsonAsync(
-                $"bot{options.BotToken}/sendMessage",
+            var request = new TelegramSendMessageRequest(_options.ChatId, message);
+            using var response = await _httpClient.PostAsJsonAsync(
+                $"bot{_options.BotToken}/sendMessage",
                 request,
                 AppJsonSerializerContext.Default.TelegramSendMessageRequest,
                 cancellationToken);
@@ -42,7 +42,7 @@ internal sealed class TelegramClient : ITelegramClient
 
             if (!response.IsSuccessStatusCode || apiResponse is not { Ok: true })
             {
-                logger.LogError(
+                _logger.LogError(
                     "Telegram request failed with HTTP {StatusCode}: {Description}",
                     (int)response.StatusCode,
                     apiResponse?.Description ?? "No response description");
@@ -53,17 +53,17 @@ internal sealed class TelegramClient : ITelegramClient
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogError(exception, "Telegram request timed out");
+            _logger.LogError(exception, "Telegram request timed out");
             return new ErrorServiceResult();
         }
         catch (HttpRequestException exception)
         {
-            logger.LogError(exception, "Telegram request failed");
+            _logger.LogError(exception, "Telegram request failed");
             return new ErrorServiceResult();
         }
         catch (System.Text.Json.JsonException exception)
         {
-            logger.LogError(exception, "Telegram returned an invalid response");
+            _logger.LogError(exception, "Telegram returned an invalid response");
             return new ErrorServiceResult();
         }
     }

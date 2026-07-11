@@ -5,12 +5,12 @@ using Lantern.Configuration;
 
 namespace Lantern.Devices;
 
-internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogger<DeviceRepository> logger)
+internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogger<DeviceRepository> _logger)
 {
     private const string TimestampFormat = "O";
     private const string InitialScanCompletedKey = "initial_scan_completed";
     private const string NotificationPendingKeyPrefix = "notification_pending:";
-    private readonly string _connectionString = CreateConnectionString(options.Value.Path);
+    private readonly string _connectionString = CreateConnectionString(_options.Value.Path);
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -41,7 +41,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
-        logger.LogInformation("Database initialized");
+        _logger.LogInformation("Database initialized");
     }
 
     public async Task<RepositoryResult> GetAsync(string macAddress, CancellationToken cancellationToken = default)
@@ -68,7 +68,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to read device {MacAddress}", normalized);
+            _logger.LogError(exception, "Failed to read device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }
@@ -106,7 +106,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to upsert observation for device {MacAddress}", normalized);
+            _logger.LogError(exception, "Failed to upsert observation for device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }
@@ -124,7 +124,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to read initial scan state");
+            _logger.LogError(exception, "Failed to read initial scan state");
             return new ErrorRepositoryResult();
         }
     }
@@ -145,7 +145,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to mark initial scan completed");
+            _logger.LogError(exception, "Failed to mark initial scan completed");
             return new ErrorRepositoryResult();
         }
     }
@@ -182,7 +182,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to record notification delivery for device {MacAddress}", normalized);
+            _logger.LogError(exception, "Failed to record notification delivery for device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }
@@ -206,7 +206,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to read notification state for device {MacAddress}", normalized);
+            _logger.LogError(exception, "Failed to read notification state for device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }
@@ -231,7 +231,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (SqliteException exception)
         {
-            logger.LogError(exception, "Failed to persist notification state for device {MacAddress}", normalized);
+            _logger.LogError(exception, "Failed to persist notification state for device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }
@@ -248,7 +248,7 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            logger.LogError(exception, "Database accessibility check failed");
+            _logger.LogError(exception, "Database accessibility check failed");
             return false;
         }
     }

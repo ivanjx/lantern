@@ -4,25 +4,25 @@ using Lantern.Monitoring;
 namespace Lantern.Devices;
 
 internal sealed class DeviceDetectionService(
-    IMikroTikClient mikroTikClient,
-    DeviceRepository repository,
-    PollStatus pollStatus,
-    TimeProvider timeProvider,
-    ILogger<DeviceDetectionService> logger)
+    IMikroTikClient _mikroTikClient,
+    DeviceRepository _repository,
+    PollStatus _pollStatus,
+    TimeProvider _timeProvider,
+    ILogger<DeviceDetectionService> _logger)
 {
     public async Task<ServiceResult> PollAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var mikroTikResult = await mikroTikClient.GetActiveLeasesAsync(cancellationToken);
+            var mikroTikResult = await _mikroTikClient.GetActiveLeasesAsync(cancellationToken);
 
             if (mikroTikResult is not MikroTikLeasesResult leasesResult)
             {
-                pollStatus.RecordFailure(GetMikroTikFailure(mikroTikResult));
+                _pollStatus.RecordFailure(GetMikroTikFailure(mikroTikResult));
                 return new ErrorServiceResult();
             }
 
-            var observedAtUtc = timeProvider.GetUtcNow();
+            var observedAtUtc = _timeProvider.GetUtcNow();
             var observations = leasesResult.Leases
                 .Select(lease => new DeviceObservation(lease.MacAddress, lease.Address, lease.HostName, observedAtUtc))
                 .ToArray();
@@ -30,12 +30,12 @@ internal sealed class DeviceDetectionService(
 
             if (detectionResult is not DeviceDetectionSuccessResult)
             {
-                pollStatus.RecordFailure("The device observations could not be processed");
+                _pollStatus.RecordFailure("The device observations could not be processed");
                 return new ErrorServiceResult();
             }
 
-            pollStatus.RecordSuccess(observedAtUtc);
-            logger.LogDebug("MikroTik poll succeeded with {LeaseCount} active leases", leasesResult.Leases.Count);
+            _pollStatus.RecordSuccess(observedAtUtc);
+            _logger.LogDebug("MikroTik poll succeeded with {LeaseCount} active leases", leasesResult.Leases.Count);
             return detectionResult;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -44,8 +44,8 @@ internal sealed class DeviceDetectionService(
         }
         catch (Exception exception)
         {
-            pollStatus.RecordFailure(exception.Message);
-            logger.LogError(exception, "MikroTik poll failed");
+            _pollStatus.RecordFailure(exception.Message);
+            _logger.LogError(exception, "MikroTik poll failed");
             return new ErrorServiceResult();
         }
     }
@@ -54,7 +54,7 @@ internal sealed class DeviceDetectionService(
         IReadOnlyList<DeviceObservation> observations,
         CancellationToken cancellationToken = default)
     {
-        var stateResult = await repository.IsInitialScanCompletedAsync(cancellationToken);
+        var stateResult = await _repository.IsInitialScanCompletedAsync(cancellationToken);
 
         if (stateResult is not RepositoryResult<bool> state)
         {
@@ -65,14 +65,14 @@ internal sealed class DeviceDetectionService(
 
         foreach (var observation in observations)
         {
-            var existingResult = await repository.GetAsync(observation.MacAddress, cancellationToken);
+            var existingResult = await _repository.GetAsync(observation.MacAddress, cancellationToken);
 
             if (existingResult is not RepositoryResult<Device?> existing)
             {
                 return new ErrorServiceResult();
             }
 
-            var upsertResult = await repository.UpsertObservationAsync(observation, cancellationToken);
+            var upsertResult = await _repository.UpsertObservationAsync(observation, cancellationToken);
 
             if (upsertResult is not SuccessRepositoryResult)
             {
@@ -81,25 +81,25 @@ internal sealed class DeviceDetectionService(
 
             if (state.Value && existing.Value is null)
             {
-                if (await repository.MarkNotificationPendingAsync(observation.MacAddress, cancellationToken)
+                if (await _repository.MarkNotificationPendingAsync(observation.MacAddress, cancellationToken)
                     is not SuccessRepositoryResult)
                 {
                     return new ErrorServiceResult();
                 }
 
-                logger.LogInformation("New unknown device detected: {MacAddress}", observation.MacAddress);
+                _logger.LogInformation("New unknown device detected: {MacAddress}", observation.MacAddress);
             }
 
             if (state.Value)
             {
-                var pendingResult = await repository.IsNotificationPendingAsync(observation.MacAddress, cancellationToken);
+                var pendingResult = await _repository.IsNotificationPendingAsync(observation.MacAddress, cancellationToken);
 
                 if (pendingResult is not RepositoryResult<bool> pending)
                 {
                     return new ErrorServiceResult();
                 }
 
-                var deviceResult = await repository.GetAsync(observation.MacAddress, cancellationToken);
+                var deviceResult = await _repository.GetAsync(observation.MacAddress, cancellationToken);
 
                 if (deviceResult is not RepositoryResult<Device?> deviceRepositoryResult)
                 {
@@ -122,14 +122,14 @@ internal sealed class DeviceDetectionService(
 
         if (!state.Value)
         {
-            var completionResult = await repository.MarkInitialScanCompletedAsync(cancellationToken);
+            var completionResult = await _repository.MarkInitialScanCompletedAsync(cancellationToken);
 
             if (completionResult is not SuccessRepositoryResult)
             {
                 return new ErrorServiceResult();
             }
 
-            logger.LogInformation("Initial baseline scan completed with {DeviceCount} devices", observations.Count);
+            _logger.LogInformation("Initial baseline scan completed with {DeviceCount} devices", observations.Count);
         }
 
         return new DeviceDetectionSuccessResult(notifications, !state.Value);

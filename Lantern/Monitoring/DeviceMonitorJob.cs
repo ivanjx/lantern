@@ -4,20 +4,20 @@ using Microsoft.Extensions.Options;
 namespace Lantern.Monitoring;
 
 internal sealed class DeviceMonitorJob(
-    DeviceMonitoringService monitoringService,
-    IOptions<LanternOptions> options,
-    TimeProvider timeProvider) : BackgroundService
+    DeviceMonitoringService _monitoringService,
+    IOptions<LanternOptions> _options,
+    TimeProvider _timeProvider) : BackgroundService
 {
-    private readonly TimeSpan pollInterval = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
+    private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(_options.Value.PollIntervalSeconds);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await monitoringService.RunAsync(stoppingToken);
-        using var timer = new PeriodicTimer(pollInterval, timeProvider);
+        await _monitoringService.RunAsync(stoppingToken);
+        using var timer = new PeriodicTimer(_pollInterval, _timeProvider);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await monitoringService.RunAsync(stoppingToken);
+            await _monitoringService.RunAsync(stoppingToken);
         }
     }
 }
