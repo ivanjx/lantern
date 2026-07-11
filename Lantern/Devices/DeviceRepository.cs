@@ -89,6 +89,23 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> IsAccessibleAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1;";
+            await command.ExecuteScalarAsync(cancellationToken);
+            return true;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Database accessibility check failed");
+            return false;
+        }
+    }
+
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         var connection = new SqliteConnection(_connectionString);
