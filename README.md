@@ -4,7 +4,7 @@ Lantern watches the active DHCP leases on a MikroTik router and alerts you throu
 
 ## Requirements
 
-- A MikroTik router with its REST API available over HTTPS
+- A MikroTik router with its REST API available over HTTP
 - A MikroTik user that can read DHCP leases
 - A Telegram bot token and destination chat ID
 - Docker with Docker Compose, or the .NET 10 SDK for local development
@@ -32,17 +32,14 @@ Lantern is configured entirely through environment variables.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `MIKROTIK_BASE_URL` | Yes | — | Absolute HTTPS URL of the router, for example `https://192.168.88.1`. |
+| `MIKROTIK_BASE_URL` | Yes | — | Absolute HTTP URL of the router, for example `http://192.168.88.1`. |
 | `MIKROTIK_USERNAME` | Yes | — | MikroTik username used for REST API requests. |
 | `MIKROTIK_PASSWORD` | Yes | — | Password for the MikroTik user. |
-| `MIKROTIK_ALLOW_INVALID_CERTIFICATE` | No | `false` | Set to `true` for a self-signed router certificate. This disables certificate validation. |
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Token issued by BotFather. |
 | `TELEGRAM_CHAT_ID` | Yes | — | Non-zero numeric ID of the chat that receives alerts. |
 | `LANTERN_PUBLIC_BASE_URL` | Yes | — | Public dashboard URL included in Telegram alerts, for example `https://lantern.example.com`. |
 | `LANTERN_POLL_INTERVAL_SECONDS` | No | `15` | DHCP lease polling interval. The minimum is 5 seconds. |
 | `DATABASE_PATH` | No | `/data/lantern.db` in the container | SQLite database path. |
-
-If your MikroTik router uses a self-signed certificate, prefer installing a trusted certificate when possible. Otherwise set `MIKROTIK_ALLOW_INVALID_CERTIFICATE=true` only on a network you trust.
 
 ## Configure Telegram
 
@@ -58,27 +55,26 @@ Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `docker-compose.yml`, then re
 
 ## Configure MikroTik RouterOS
 
-Lantern requires RouterOS 7 and HTTPS REST access. Run these commands as a router administrator, replacing the password, certificate name, and Lantern host IP:
+Lantern requires RouterOS 7 and HTTP REST access. Run these commands as a router administrator, replacing the password and Lantern host IP:
 
 ```routeros
-/user group add name=lantern policy=read,rest-api
-/user add name=lantern group=lantern password="password" address=192.168.88.10/32
-/ip service set www-ssl certificate=router-certificate disabled=no
+/user add name=lantern group=read password="password" address=192.168.88.10/32
+/ip service set www disabled=no
 ```
 
-If firewall rules block access to the router, allow HTTPS from the Lantern host before the input drop rule:
+If firewall rules block access to the router, allow HTTP from the Lantern host before the input drop rule:
 
 ```routeros
-/ip firewall filter add chain=input action=accept protocol=tcp dst-port=443 src-address=192.168.88.10/32 comment="Allow Lantern REST API"
+/ip firewall filter add chain=input action=accept protocol=tcp dst-port=80 src-address=192.168.88.10/32 comment="Allow Lantern REST API"
 ```
 
 Test the lease endpoint:
 
 ```sh
-curl -u 'lantern:password' https://192.168.88.1/rest/ip/dhcp-server/lease
+curl -u 'lantern:password' http://192.168.88.1/rest/ip/dhcp-server/lease
 ```
 
-For a self-signed certificate, use `curl -k` and set `MIKROTIK_ALLOW_INVALID_CERTIFICATE=true`. Set `MIKROTIK_BASE_URL` to the router origin, such as `https://192.168.88.1`, without `/rest`.
+Set `MIKROTIK_BASE_URL` to the router origin, such as `http://192.168.88.1`, without `/rest`.
 
 ## Local development
 
