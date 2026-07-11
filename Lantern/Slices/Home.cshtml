@@ -5,6 +5,8 @@
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "Not available" : value;
     private static string LocalTime(DateTimeOffset? value) => value?.ToLocalTime().ToString("dd MMM yyyy, HH:mm", CultureInfo.CurrentCulture) ?? "Not yet";
     private static string StatusName(DeviceStatus status) => status.ToString();
+    private static string ConnectivityName(bool? isOnline) => isOnline switch { true => "Online", false => "Offline", null => "Unknown" };
+    private static string ConnectivityClass(bool? isOnline) => isOnline switch { true => "online", false => "offline", null => "connectivity-unknown" };
 }
 <!doctype html>
 <html lang="en">
@@ -105,8 +107,12 @@
                         @foreach (var device in Model.Devices)
                         {
                             var statusClass = device.Status.ToString().ToLowerInvariant();
+                            var isOnline = Model.IsOnline(device);
                             <tr>
-                                <td data-label="Status"><span class="badge badge-@statusClass">@StatusName(device.Status)</span></td>
+                                <td data-label="Status">
+                                    <span class="badge badge-@statusClass">@StatusName(device.Status)</span>
+                                    <span class="badge badge-@ConnectivityClass(isOnline)">@ConnectivityName(isOnline)</span>
+                                </td>
                                 <td data-label="Device">
                                     <div class="device-name-row">
                                         <strong class="device-name">@Display(device.FriendlyName)</strong>
@@ -135,6 +141,10 @@
                                         {
                                             <form method="post" action="/devices/@device.MacAddress/trust"><button class="button button-primary" type="submit">Trust</button></form>
                                             <form method="post" action="/devices/@device.MacAddress/ignore"><button class="button button-quiet" type="submit">Ignore</button></form>
+                                            @if (isOnline == false)
+                                            {
+                                                <form method="post" action="/devices/@device.MacAddress/delete"><button class="button button-danger" type="submit">Delete</button></form>
+                                            }
                                         }
                                         else if (device.Status == DeviceStatus.Trusted)
                                         {

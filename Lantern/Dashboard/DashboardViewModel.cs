@@ -12,6 +12,10 @@ public sealed record DashboardViewModel(
     DashboardFeedback? Feedback)
 {
     public bool IsHealthy => LastSuccessfulPollUtc is not null && LastPollError is null;
+
+    public bool? IsOnline(Device device) => LastSuccessfulPollUtc is not { } lastSuccessfulPollUtc ?
+        null :
+        device.LastSeenUtc >= lastSuccessfulPollUtc;
 }
 
 public sealed record DashboardFeedback(string Message, bool IsError);

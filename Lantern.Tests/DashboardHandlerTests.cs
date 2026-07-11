@@ -78,6 +78,42 @@ public sealed class DashboardHandlerTests : IDisposable
         Assert.Equal(DeviceStatus.Unknown, device!.Status);
     }
 
+    [Fact]
+    public async Task DeleteAsync_DeletesOfflineUnknownDevice()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        const string mac = "AA:BB:CC:DD:EE:FF";
+        var pollTime = DateTimeOffset.Parse("2026-07-11T10:01:00Z");
+        await repository.UpsertObservationAsync(new(mac, null, null, pollTime.AddMinutes(-1)));
+        var pollStatus = new PollStatus();
+        pollStatus.RecordSuccess(pollTime);
+        var handler = new DashboardHandler(repository, pollStatus);
+
+        var result = await handler.DeleteAsync(mac, default);
+
+        Assert.Equal("/?feedback=deleted", Assert.IsType<RedirectHttpResult>(result).Url);
+        Assert.Null(Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync(mac)).Value);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_RejectsDeviceSeenInLatestPoll()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        const string mac = "AA:BB:CC:DD:EE:FF";
+        var pollTime = DateTimeOffset.Parse("2026-07-11T10:01:00Z");
+        await repository.UpsertObservationAsync(new(mac, null, null, pollTime));
+        var pollStatus = new PollStatus();
+        pollStatus.RecordSuccess(pollTime);
+        var handler = new DashboardHandler(repository, pollStatus);
+
+        var result = await handler.DeleteAsync(mac, default);
+
+        Assert.Equal("/?feedback=device-not-deletable", Assert.IsType<RedirectHttpResult>(result).Url);
+        Assert.NotNull(Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync(mac)).Value);
+    }
+
     private static DefaultHttpContext CreateFormContext(string form)
     {
         var context = new DefaultHttpContext();

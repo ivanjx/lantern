@@ -122,6 +122,55 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
         CancellationToken cancellationToken = default) =>
         UpdateDeviceAsync(macAddress, "friendly_name = $value", friendlyName, cancellationToken);
 
+    public async Task<RepositoryResult> DeleteUnknownOfflineAsync(
+        string macAddress,
+        DateTimeOffset lastSuccessfulPollUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MacAddress.TryNormalize(macAddress, out var normalized))
+        {
+            return new InvalidMacAddressRepositoryErrorResult();
+        }
+
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                DELETE FROM devices
+                WHERE mac_address = $macAddress
+                  AND status = $unknown
+                  AND last_seen_utc < $lastSuccessfulPollUtc;
+                """;
+            command.Parameters.AddWithValue("$macAddress", normalized);
+            command.Parameters.AddWithValue("$unknown", (int)DeviceStatus.Unknown);
+            command.Parameters.AddWithValue("$lastSuccessfulPollUtc", lastSuccessfulPollUtc.UtcDateTime.ToString(TimestampFormat, CultureInfo.InvariantCulture));
+
+            if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                command.CommandText = "SELECT 1 FROM devices WHERE mac_address = $macAddress;";
+                var exists = await command.ExecuteScalarAsync(cancellationToken) is not null;
+                await transaction.RollbackAsync(cancellationToken);
+                return exists ?
+                    new DeviceNotDeletableRepositoryErrorResult() :
+                    new DeviceNotFoundRepositoryErrorResult();
+            }
+
+            command.CommandText = "DELETE FROM app_state WHERE key = $pendingKey;";
+            command.Parameters.AddWithValue("$pendingKey", NotificationPendingKeyPrefix + normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            _logger.LogError(exception, "Failed to delete device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
+    }
+
     public async Task<RepositoryResult> UpsertObservationAsync(
         DeviceObservation observation,
         CancellationToken cancellationToken = default)

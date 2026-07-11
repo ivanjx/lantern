@@ -109,6 +109,8 @@ app.MapPost("/devices/{mac}/unignore", (DashboardHandler handler, string mac, Ca
     handler.UnignoreAsync(mac, cancellationToken));
 app.MapPost("/devices/{mac}/rename", (DashboardHandler handler, string mac, HttpRequest request, CancellationToken cancellationToken) =>
     handler.RenameAsync(mac, request, cancellationToken));
+app.MapPost("/devices/{mac}/delete", (DashboardHandler handler, string mac, CancellationToken cancellationToken) =>
+    handler.DeleteAsync(mac, cancellationToken));
 app.MapGet("/health", (HealthHandler handler, CancellationToken cancellationToken) =>
     handler.HandleAsync(cancellationToken));
 

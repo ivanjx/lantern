@@ -114,6 +114,27 @@ public sealed class DeviceRepositoryTests : IDisposable
         Assert.Null(device!.FriendlyName);
     }
 
+    [Fact]
+    public async Task DeleteUnknownOfflineAsync_DeletesOnlyUnknownDevicesNotSeenInLatestPoll()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var pollTime = DateTimeOffset.Parse("2026-07-11T10:01:00Z");
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:01", null, "offline", pollTime.AddMinutes(-1)));
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:02", null, "online", pollTime));
+        await repository.UpsertObservationAsync(new("00:00:00:00:00:03", null, "trusted", pollTime.AddMinutes(-1)));
+        await repository.SetStatusAsync("00:00:00:00:00:03", DeviceStatus.Trusted);
+
+        var offlineResult = await repository.DeleteUnknownOfflineAsync("00:00:00:00:00:01", pollTime);
+        var onlineResult = await repository.DeleteUnknownOfflineAsync("00:00:00:00:00:02", pollTime);
+        var trustedResult = await repository.DeleteUnknownOfflineAsync("00:00:00:00:00:03", pollTime);
+
+        Assert.IsType<SuccessRepositoryResult>(offlineResult);
+        Assert.IsType<DeviceNotDeletableRepositoryErrorResult>(onlineResult);
+        Assert.IsType<DeviceNotDeletableRepositoryErrorResult>(trustedResult);
+        Assert.Null(Assert.IsType<RepositoryResult<Device?>>(await repository.GetAsync("00:00:00:00:00:01")).Value);
+    }
+
     private DeviceRepository CreateRepository() => new(
         Options.Create(new DatabaseOptions { Path = Path.Combine(_directory, "lantern.db") }),
         NullLogger<DeviceRepository>.Instance);

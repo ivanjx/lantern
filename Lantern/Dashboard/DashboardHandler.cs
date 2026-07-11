@@ -41,6 +41,24 @@ internal sealed class DashboardHandler(DeviceRepository _repository, PollStatus 
     public Task<IResult> UnignoreAsync(string mac, CancellationToken cancellationToken) =>
         ChangeStatusAsync(mac, DeviceStatus.Unknown, "unignored", cancellationToken);
 
+    public async Task<IResult> DeleteAsync(string mac, CancellationToken cancellationToken)
+    {
+        if (!MacAddress.TryNormalize(mac, out _))
+        {
+            return Redirect("invalid-mac");
+        }
+
+        var lastSuccessfulPollUtc = _pollStatus.GetSnapshot().LastSuccessfulPollUtc;
+        if (lastSuccessfulPollUtc is null)
+        {
+            return Redirect("device-not-deletable");
+        }
+
+        return RedirectForResult(
+            await _repository.DeleteUnknownOfflineAsync(mac, lastSuccessfulPollUtc.Value, cancellationToken),
+            "deleted");
+    }
+
     public async Task<IResult> RenameAsync(string mac, HttpRequest request, CancellationToken cancellationToken)
     {
         if (!MacAddress.TryNormalize(mac, out _))
@@ -80,6 +98,7 @@ internal sealed class DashboardHandler(DeviceRepository _repository, PollStatus 
     private static IResult RedirectForResult(RepositoryResult result, string successFeedback) => result switch
     {
         DeviceNotFoundRepositoryErrorResult => Redirect("device-missing"),
+        DeviceNotDeletableRepositoryErrorResult => Redirect("device-not-deletable"),
         SuccessRepositoryResult => Redirect(successFeedback),
         _ => Redirect("update-failed")
     };
@@ -94,9 +113,11 @@ internal sealed class DashboardHandler(DeviceRepository _repository, PollStatus 
         "untrusted" => new("Device returned to unknown.", false),
         "unignored" => new("Device returned to unknown.", false),
         "renamed" => new("Device name updated.", false),
+        "deleted" => new("Unknown offline device removed. It will be reported again if it reconnects.", false),
         "invalid-mac" => new("The device address is invalid.", true),
         "name-too-long" => new("Friendly names must be 100 characters or fewer.", true),
         "device-missing" => new("That device no longer exists.", true),
+        "device-not-deletable" => new("Only unknown offline devices can be removed.", true),
         "update-failed" => new("The device could not be updated. Try again.", true),
         _ => null
     };
