@@ -4,7 +4,8 @@ internal static class MacAddress
 {
     public static bool TryNormalize(string? value, out string normalized)
     {
-        normalized = string.Empty;
+        normalized = "";
+
         if (string.IsNullOrWhiteSpace(value))
         {
             return false;
@@ -35,6 +36,7 @@ internal static class MacAddress
         normalized = string.Create(17, hex.ToArray(), static (destination, source) =>
         {
             var sourceIndex = 0;
+
             for (var destinationIndex = 0; destinationIndex < destination.Length; destinationIndex++)
             {
                 if ((destinationIndex + 1) % 3 == 0)
