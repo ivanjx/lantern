@@ -8,6 +8,8 @@ namespace Lantern.Devices;
 internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogger<DeviceRepository> logger)
 {
     private const string TimestampFormat = "O";
+    private const string InitialScanCompletedKey = "initial_scan_completed";
+    private const string NotificationPendingKeyPrefix = "notification_pending:";
     private readonly string _connectionString = CreateConnectionString(options.Value.Path);
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -105,6 +107,131 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         catch (SqliteException exception)
         {
             logger.LogError(exception, "Failed to upsert observation for device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public async Task<RepositoryResult> IsInitialScanCompletedAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT value FROM app_state WHERE key = $key;";
+            command.Parameters.AddWithValue("$key", InitialScanCompletedKey);
+            var value = await command.ExecuteScalarAsync(cancellationToken) as string;
+            return new RepositoryResult<bool>(string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to read initial scan state");
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public async Task<RepositoryResult> MarkInitialScanCompletedAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO app_state (key, value) VALUES ($key, 'true')
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+                """;
+            command.Parameters.AddWithValue("$key", InitialScanCompletedKey);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to mark initial scan completed");
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public async Task<RepositoryResult> MarkNotificationDeliveredAsync(
+        string macAddress,
+        DateTimeOffset deliveredAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MacAddress.TryNormalize(macAddress, out var normalized))
+        {
+            return new InvalidMacAddressRepositoryErrorResult();
+        }
+
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                UPDATE devices
+                SET last_notification_utc = $deliveredAtUtc
+                WHERE mac_address = $macAddress;
+
+                DELETE FROM app_state WHERE key = $pendingKey;
+                """;
+            command.Parameters.AddWithValue("$macAddress", normalized);
+            command.Parameters.AddWithValue("$deliveredAtUtc", deliveredAtUtc.UtcDateTime.ToString(TimestampFormat, CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$pendingKey", NotificationPendingKeyPrefix + normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to record notification delivery for device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public async Task<RepositoryResult> IsNotificationPendingAsync(
+        string macAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MacAddress.TryNormalize(macAddress, out var normalized))
+        {
+            return new InvalidMacAddressRepositoryErrorResult();
+        }
+
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1 FROM app_state WHERE key = $key;";
+            command.Parameters.AddWithValue("$key", NotificationPendingKeyPrefix + normalized);
+            return new RepositoryResult<bool>(await command.ExecuteScalarAsync(cancellationToken) is not null);
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to read notification state for device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
+    }
+
+    public async Task<RepositoryResult> MarkNotificationPendingAsync(
+        string macAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MacAddress.TryNormalize(macAddress, out var normalized))
+        {
+            return new InvalidMacAddressRepositoryErrorResult();
+        }
+
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "INSERT OR IGNORE INTO app_state (key, value) VALUES ($key, 'true');";
+            command.Parameters.AddWithValue("$key", NotificationPendingKeyPrefix + normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to persist notification state for device {MacAddress}", normalized);
             return new ErrorRepositoryResult();
         }
     }

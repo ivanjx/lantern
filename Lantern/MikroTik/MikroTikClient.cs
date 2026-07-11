@@ -8,7 +8,12 @@ using Microsoft.Extensions.Options;
 
 namespace Lantern.MikroTik;
 
-internal sealed class MikroTikClient
+internal interface IMikroTikClient
+{
+    Task<ServiceResult> GetActiveLeasesAsync(CancellationToken cancellationToken = default);
+}
+
+internal sealed class MikroTikClient : IMikroTikClient
 {
     private const string LeasePath = "rest/ip/dhcp-server/lease";
     private readonly HttpClient httpClient;

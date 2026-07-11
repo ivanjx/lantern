@@ -17,6 +17,7 @@ builder.Services
     .Validate(options => !string.IsNullOrWhiteSpace(options.Path), "DATABASE_PATH is required.")
     .ValidateOnStart();
 builder.Services.AddSingleton<DeviceRepository>();
+builder.Services.AddSingleton<DeviceDetectionService>();
 builder.Services
     .AddOptions<LanternOptions>()
     .Configure(options =>
@@ -48,7 +49,7 @@ builder.Services
     .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "MIKROTIK_PASSWORD is required.")
     .ValidateOnStart();
 builder.Services
-    .AddHttpClient<MikroTikClient>()
+    .AddHttpClient<IMikroTikClient, MikroTikClient>()
     .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
     {
         var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<MikroTikOptions>>().Value;
