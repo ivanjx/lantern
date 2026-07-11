@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text;
 using Lantern.Configuration;
 using Lantern.Devices;
-using Lantern.Json;
 using Microsoft.Extensions.Options;
 
 namespace Lantern.MikroTik;

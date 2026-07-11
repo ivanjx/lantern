@@ -1,11 +1,10 @@
 using Lantern.Configuration;
-using Lantern.Devices;
 using Microsoft.Extensions.Options;
 
 namespace Lantern.Monitoring;
 
-internal sealed class DeviceMonitorWorker(
-    DeviceDetectionService detectionService,
+internal sealed class DeviceMonitorJob(
+    DeviceMonitoringService monitoringService,
     IOptions<LanternOptions> options,
     TimeProvider timeProvider) : BackgroundService
 {
@@ -13,12 +12,12 @@ internal sealed class DeviceMonitorWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await detectionService.PollAsync(stoppingToken);
+        await monitoringService.RunAsync(stoppingToken);
         using var timer = new PeriodicTimer(pollInterval, timeProvider);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await detectionService.PollAsync(stoppingToken);
+            await monitoringService.RunAsync(stoppingToken);
         }
     }
 }

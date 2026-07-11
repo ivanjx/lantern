@@ -3,6 +3,7 @@ using Lantern.Devices;
 using Lantern.MikroTik;
 using Lantern.Monitoring;
 using Lantern.Slices;
+using Lantern.Telegram;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -18,6 +19,26 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddSingleton<DeviceRepository>();
 builder.Services.AddSingleton<DeviceDetectionService>();
+builder.Services.AddSingleton<DeviceMonitoringService>();
+builder.Services
+    .AddOptions<TelegramOptions>()
+    .Configure(options =>
+    {
+        options.BotToken = builder.Configuration[TelegramOptions.BotTokenEnvironmentVariable] ?? "";
+        options.ChatId = long.TryParse(builder.Configuration[TelegramOptions.ChatIdEnvironmentVariable], out var chatId) ?
+            chatId :
+            0;
+        options.PublicBaseUrl = builder.Configuration[TelegramOptions.PublicBaseUrlEnvironmentVariable];
+    })
+    .Validate(options => !string.IsNullOrWhiteSpace(options.BotToken), "TELEGRAM_BOT_TOKEN is required.")
+    .Validate(options => options.ChatId != 0, "TELEGRAM_CHAT_ID must be a non-zero integer.")
+    .Validate(options => string.IsNullOrWhiteSpace(options.PublicBaseUrl) ||
+        Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out _),
+        "LANTERN_PUBLIC_BASE_URL must be an absolute URL when set.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient<ITelegramClient, TelegramClient>();
+builder.Services.AddSingleton<TelegramNotificationService>();
+builder.Logging.AddFilter("System.Net.Http.HttpClient.ITelegramClient", LogLevel.None);
 builder.Services
     .AddOptions<LanternOptions>()
     .Configure(options =>
@@ -62,7 +83,7 @@ builder.Services
     });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PollStatus>();
-builder.Services.AddHostedService<DeviceMonitorWorker>();
+builder.Services.AddHostedService<DeviceMonitorJob>();
 
 var app = builder.Build();
 
