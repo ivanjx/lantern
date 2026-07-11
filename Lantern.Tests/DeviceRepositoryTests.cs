@@ -16,16 +16,42 @@ public sealed class DeviceRepositoryTests : IDisposable
         await repository.InitializeAsync();
         var firstSeen = DateTimeOffset.Parse("2026-07-11T10:00:00Z");
 
-        await repository.UpsertObservationAsync(new("aa-bb-cc-dd-ee-ff", "192.168.1.2", "phone", firstSeen));
-        await repository.UpsertObservationAsync(new("AA:BB:CC:DD:EE:FF", "192.168.1.3", "phone-new", firstSeen.AddMinutes(1)));
+        var insertResult = await repository.UpsertObservationAsync(
+            new("aa-bb-cc-dd-ee-ff", "192.168.1.2", "phone", firstSeen));
+        var updateResult = await repository.UpsertObservationAsync(
+            new("AA:BB:CC:DD:EE:FF", "192.168.1.3", "phone-new", firstSeen.AddMinutes(1)));
 
-        var device = await repository.GetAsync("aabbccddeeff");
+        Assert.IsType<SuccessRepositoryResult>(insertResult);
+        Assert.IsType<SuccessRepositoryResult>(updateResult);
+        var getResult = await repository.GetAsync("aabbccddeeff");
+        var device = Assert.IsType<RepositoryResult<Device?>>(getResult).Value;
         Assert.NotNull(device);
         Assert.Equal(DeviceStatus.Unknown, device.Status);
         Assert.Equal(firstSeen, device.FirstSeenUtc);
         Assert.Equal(firstSeen.AddMinutes(1), device.LastSeenUtc);
         Assert.Equal("192.168.1.3", device.LastIpAddress);
         Assert.Equal("phone-new", device.LastHostname);
+    }
+
+    [Fact]
+    public async Task GetAsync_ReturnsInvalidMacAddressForInvalidInput()
+    {
+        var repository = CreateRepository();
+
+        var result = await repository.GetAsync("not-a-mac");
+
+        Assert.IsType<InvalidMacAddressRepositoryErrorResult>(result);
+    }
+
+    [Fact]
+    public async Task UpsertObservation_ReturnsInvalidMacAddressForInvalidInput()
+    {
+        var repository = CreateRepository();
+        var observation = new DeviceObservation("not-a-mac", null, null, DateTimeOffset.UtcNow);
+
+        var result = await repository.UpsertObservationAsync(observation);
+
+        Assert.IsType<InvalidMacAddressRepositoryErrorResult>(result);
     }
 
     private DeviceRepository CreateRepository() => new(

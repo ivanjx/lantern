@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Lantern.Configuration;
 using Lantern.MikroTik;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Lantern.Tests;
@@ -22,9 +23,10 @@ public sealed class MikroTikClientTests
         var handler = new StubHttpMessageHandler(json);
         var client = CreateClient(handler);
 
-        var leases = await client.GetActiveLeasesAsync(CancellationToken.None);
+        var result = await client.GetActiveLeasesAsync(CancellationToken.None);
 
-        var lease = Assert.Single(leases);
+        var success = Assert.IsType<MikroTikLeasesResult>(result);
+        var lease = Assert.Single(success.Leases);
         Assert.Equal("AA:BB:CC:DD:EE:FF", lease.MacAddress);
         Assert.Equal("192.168.1.10", lease.Address);
         Assert.Equal("phone", lease.HostName);
@@ -36,13 +38,36 @@ public sealed class MikroTikClientTests
     }
 
     [Fact]
-    public async Task GetActiveLeasesAsync_ThrowsForNonSuccessResponse()
+    public async Task GetActiveLeasesAsync_ReturnsUnavailableForNonSuccessResponse()
     {
         var handler = new StubHttpMessageHandler("{}", HttpStatusCode.ServiceUnavailable);
         var client = CreateClient(handler);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
-            client.GetActiveLeasesAsync(CancellationToken.None));
+        var result = await client.GetActiveLeasesAsync(CancellationToken.None);
+
+        Assert.IsType<ErrorServiceResult>(result);
+    }
+
+    [Fact]
+    public async Task GetActiveLeasesAsync_ReturnsUnauthorizedWhenCredentialsAreRejected()
+    {
+        var handler = new StubHttpMessageHandler("{}", HttpStatusCode.Unauthorized);
+        var client = CreateClient(handler);
+
+        var result = await client.GetActiveLeasesAsync(CancellationToken.None);
+
+        Assert.IsType<MikroTikUnauthorizedErrorResult>(result);
+    }
+
+    [Fact]
+    public async Task GetActiveLeasesAsync_ReturnsInvalidResponseForMalformedJson()
+    {
+        var handler = new StubHttpMessageHandler("not-json");
+        var client = CreateClient(handler);
+
+        var result = await client.GetActiveLeasesAsync(CancellationToken.None);
+
+        Assert.IsType<MikroTikInvalidResponseErrorResult>(result);
     }
 
     private static MikroTikClient CreateClient(HttpMessageHandler handler)
@@ -53,7 +78,10 @@ public sealed class MikroTikClientTests
             Username = "reader",
             Password = "secret"
         });
-        return new MikroTikClient(new HttpClient(handler), options);
+        return new MikroTikClient(
+            new HttpClient(handler),
+            options,
+            NullLogger<MikroTikClient>.Instance);
     }
 
     private sealed class StubHttpMessageHandler(

@@ -12,11 +12,16 @@ internal sealed class MikroTikClient
 {
     private const string LeasePath = "rest/ip/dhcp-server/lease";
     private readonly HttpClient httpClient;
+    private readonly ILogger<MikroTikClient> logger;
 
-    public MikroTikClient(HttpClient httpClient, IOptions<MikroTikOptions> options)
+    public MikroTikClient(
+        HttpClient httpClient,
+        IOptions<MikroTikOptions> options,
+        ILogger<MikroTikClient> logger)
     {
         var settings = options.Value;
         this.httpClient = httpClient;
+        this.logger = logger;
         this.httpClient.BaseAddress = new Uri(EnsureTrailingSlash(settings.BaseUrl), UriKind.Absolute);
         this.httpClient.Timeout = TimeSpan.FromSeconds(10);
 
@@ -26,34 +31,63 @@ internal sealed class MikroTikClient
             new AuthenticationHeaderValue("Basic", credentials);
     }
 
-    public async Task<IReadOnlyList<MikroTikLease>> GetActiveLeasesAsync(
+    public async Task<ServiceResult> GetActiveLeasesAsync(
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync(LeasePath, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var leases = await response.Content.ReadFromJsonAsync(
-            AppJsonSerializerContext.Default.MikroTikLeaseResponseArray,
-            cancellationToken) ?? [];
-        var activeLeases = new List<MikroTikLease>(leases.Length);
-
-        foreach (var lease in leases)
+        try
         {
-            if (!IsActive(lease) || !MacAddress.TryNormalize(lease.MacAddress, out var macAddress))
+            using var response = await httpClient.GetAsync(LeasePath, cancellationToken);
+
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             {
-                continue;
+                logger.LogError("MikroTik request was rejected with HTTP {StatusCode}", (int)response.StatusCode);
+                return new MikroTikUnauthorizedErrorResult();
             }
 
-            activeLeases.Add(new MikroTikLease(
-                macAddress,
-                NullIfWhiteSpace(lease.Address),
-                NullIfWhiteSpace(lease.HostName),
-                NullIfWhiteSpace(lease.Status),
-                IsTrue(lease.Dynamic),
-                IsTrue(lease.Disabled)));
-        }
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError("MikroTik request failed with HTTP {StatusCode}", (int)response.StatusCode);
+                return new ErrorServiceResult();
+            }
 
-        return activeLeases;
+            var leases = await response.Content.ReadFromJsonAsync(
+                AppJsonSerializerContext.Default.MikroTikLeaseResponseArray,
+                cancellationToken) ?? [];
+            var activeLeases = new List<MikroTikLease>(leases.Length);
+
+            foreach (var lease in leases)
+            {
+                if (!IsActive(lease) || !MacAddress.TryNormalize(lease.MacAddress, out var macAddress))
+                {
+                    continue;
+                }
+
+                activeLeases.Add(new MikroTikLease(
+                    macAddress,
+                    NullIfWhiteSpace(lease.Address),
+                    NullIfWhiteSpace(lease.HostName),
+                    NullIfWhiteSpace(lease.Status),
+                    IsTrue(lease.Dynamic),
+                    IsTrue(lease.Disabled)));
+            }
+
+            return new MikroTikLeasesResult(activeLeases);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(exception, "MikroTik request timed out");
+            return new ErrorServiceResult();
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogError(exception, "MikroTik request failed");
+            return new ErrorServiceResult();
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            logger.LogError(exception, "MikroTik returned an invalid response");
+            return new MikroTikInvalidResponseErrorResult();
+        }
     }
 
     private static bool IsActive(MikroTikLeaseResponse lease) =>

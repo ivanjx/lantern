@@ -30,18 +30,31 @@ internal sealed class DeviceMonitorWorker(
     {
         try
         {
-            var leases = await mikroTikClient.GetActiveLeasesAsync(cancellationToken);
+            var mikroTikResult = await mikroTikClient.GetActiveLeasesAsync(cancellationToken);
+
+            if (mikroTikResult is not MikroTikLeasesResult leasesResult)
+            {
+                pollStatus.RecordFailure(GetMikroTikFailure(mikroTikResult));
+                return;
+            }
+
             var observedAtUtc = timeProvider.GetUtcNow();
 
-            foreach (var lease in leases)
+            foreach (var lease in leasesResult.Leases)
             {
-                await deviceRepository.UpsertObservationAsync(
+                var repositoryResult = await deviceRepository.UpsertObservationAsync(
                     new DeviceObservation(lease.MacAddress, lease.Address, lease.HostName, observedAtUtc),
                     cancellationToken);
+
+                if (repositoryResult is not SuccessRepositoryResult)
+                {
+                    pollStatus.RecordFailure(GetRepositoryFailure(repositoryResult));
+                    return;
+                }
             }
 
             pollStatus.RecordSuccess(observedAtUtc);
-            logger.LogDebug("MikroTik poll succeeded with {LeaseCount} active leases", leases.Count);
+            logger.LogDebug("MikroTik poll succeeded with {LeaseCount} active leases", leasesResult.Leases.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -52,4 +65,19 @@ internal sealed class DeviceMonitorWorker(
             logger.LogError(exception, "MikroTik poll failed");
         }
     }
+
+    private static string GetMikroTikFailure(ServiceResult result) => result switch
+    {
+        MikroTikUnauthorizedErrorResult => "MikroTik authentication failed",
+        MikroTikInvalidResponseErrorResult => "MikroTik returned an invalid response",
+        ErrorServiceResult => "MikroTik is unavailable",
+        _ => "MikroTik poll failed"
+    };
+
+    private static string GetRepositoryFailure(RepositoryResult result) => result switch
+    {
+        InvalidMacAddressRepositoryErrorResult => "An invalid device MAC address was rejected",
+        ErrorRepositoryResult => "The device database is unavailable",
+        _ => "The device observation could not be stored"
+    };
 }

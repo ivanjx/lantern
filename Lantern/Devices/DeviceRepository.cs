@@ -42,51 +42,71 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> options, ILogge
         logger.LogInformation("Database initialized");
     }
 
-    public async Task<Device?> GetAsync(string macAddress, CancellationToken cancellationToken = default)
+    public async Task<RepositoryResult> GetAsync(string macAddress, CancellationToken cancellationToken = default)
     {
         if (!MacAddress.TryNormalize(macAddress, out var normalized))
         {
-            throw new ArgumentException("Invalid MAC address.", nameof(macAddress));
+            return new InvalidMacAddressRepositoryErrorResult();
         }
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT mac_address, friendly_name, status, first_seen_utc, last_seen_utc,
-                   last_ip_address, last_hostname, last_notification_utc
-            FROM devices
-            WHERE mac_address = $macAddress;
-            """;
-        command.Parameters.AddWithValue("$macAddress", normalized);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? ReadDevice(reader) : null;
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT mac_address, friendly_name, status, first_seen_utc, last_seen_utc,
+                       last_ip_address, last_hostname, last_notification_utc
+                FROM devices
+                WHERE mac_address = $macAddress;
+                """;
+            command.Parameters.AddWithValue("$macAddress", normalized);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var device = await reader.ReadAsync(cancellationToken) ? ReadDevice(reader) : null;
+            return new RepositoryResult<Device?>(device);
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to read device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
     }
 
-    public async Task UpsertObservationAsync(DeviceObservation observation, CancellationToken cancellationToken = default)
+    public async Task<RepositoryResult> UpsertObservationAsync(
+        DeviceObservation observation,
+        CancellationToken cancellationToken = default)
     {
         if (!MacAddress.TryNormalize(observation.MacAddress, out var normalized))
         {
-            throw new ArgumentException("Invalid MAC address.", nameof(observation));
+            return new InvalidMacAddressRepositoryErrorResult();
         }
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO devices (
-                mac_address, friendly_name, status, first_seen_utc, last_seen_utc,
-                last_ip_address, last_hostname, last_notification_utc)
-            VALUES ($macAddress, NULL, $status, $observedAtUtc, $observedAtUtc, $ipAddress, $hostname, NULL)
-            ON CONFLICT(mac_address) DO UPDATE SET
-                last_seen_utc = excluded.last_seen_utc,
-                last_ip_address = excluded.last_ip_address,
-                last_hostname = excluded.last_hostname;
-            """;
-        command.Parameters.AddWithValue("$macAddress", normalized);
-        command.Parameters.AddWithValue("$status", (int)DeviceStatus.Unknown);
-        command.Parameters.AddWithValue("$observedAtUtc", observation.ObservedAtUtc.UtcDateTime.ToString(TimestampFormat, CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("$ipAddress", (object?)observation.IpAddress ?? DBNull.Value);
-        command.Parameters.AddWithValue("$hostname", (object?)observation.Hostname ?? DBNull.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO devices (
+                    mac_address, friendly_name, status, first_seen_utc, last_seen_utc,
+                    last_ip_address, last_hostname, last_notification_utc)
+                VALUES ($macAddress, NULL, $status, $observedAtUtc, $observedAtUtc, $ipAddress, $hostname, NULL)
+                ON CONFLICT(mac_address) DO UPDATE SET
+                    last_seen_utc = excluded.last_seen_utc,
+                    last_ip_address = excluded.last_ip_address,
+                    last_hostname = excluded.last_hostname;
+                """;
+            command.Parameters.AddWithValue("$macAddress", normalized);
+            command.Parameters.AddWithValue("$status", (int)DeviceStatus.Unknown);
+            command.Parameters.AddWithValue("$observedAtUtc", observation.ObservedAtUtc.UtcDateTime.ToString(TimestampFormat, CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$ipAddress", (object?)observation.IpAddress ?? DBNull.Value);
+            command.Parameters.AddWithValue("$hostname", (object?)observation.Hostname ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return new SuccessRepositoryResult();
+        }
+        catch (SqliteException exception)
+        {
+            logger.LogError(exception, "Failed to upsert observation for device {MacAddress}", normalized);
+            return new ErrorRepositoryResult();
+        }
     }
 
     public async Task<bool> IsAccessibleAsync(CancellationToken cancellationToken = default)
