@@ -32,7 +32,7 @@ internal sealed class TelegramClient : ITelegramClient
         {
             var request = new TelegramSendMessageRequest(_options.ChatId, message);
             using var response = await _httpClient.PostAsJsonAsync(
-                $"bot{_options.BotToken}/sendMessage",
+                $"./bot{_options.BotToken}/sendMessage",
                 request,
                 AppJsonSerializerContext.Default.TelegramSendMessageRequest,
                 cancellationToken);
