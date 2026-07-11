@@ -67,8 +67,9 @@ builder.Services
             builder.Configuration[MikroTikOptions.AllowInvalidCertificateEnvironmentVariable],
             out var allowInvalidCertificate) && allowInvalidCertificate;
     })
-    .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps,
-        "MIKROTIK_BASE_URL must be an absolute HTTPS URL.")
+    .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
+        "MIKROTIK_BASE_URL must be an absolute HTTP or HTTPS URL.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.Username), "MIKROTIK_USERNAME is required.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "MIKROTIK_PASSWORD is required.")
     .ValidateOnStart();

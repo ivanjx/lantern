@@ -32,7 +32,7 @@ public sealed class MikroTikClientTests
         Assert.Equal("phone", lease.HostName);
         Assert.True(lease.Dynamic);
         Assert.False(lease.Disabled);
-        Assert.Equal(new Uri("https://router.example/rest/ip/dhcp-server/lease"), handler.RequestUri);
+        Assert.Equal(new Uri("http://router.example/rest/ip/dhcp-server/lease"), handler.RequestUri);
         Assert.Equal("Basic", handler.AuthorizationScheme);
         Assert.Equal(Convert.ToBase64String(Encoding.UTF8.GetBytes("reader:secret")), handler.AuthorizationParameter);
     }
@@ -74,7 +74,7 @@ public sealed class MikroTikClientTests
     {
         var options = Options.Create(new MikroTikOptions
         {
-            BaseUrl = "https://router.example",
+            BaseUrl = "http://router.example",
             Username = "reader",
             Password = "secret"
         });
