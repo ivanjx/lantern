@@ -1,0 +1,20 @@
+services:
+  lantern:
+    image: ghcr.io/ivanjx/lantern:latest
+    container_name: lantern
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MIKROTIK_BASE_URL: "https://192.168.88.1"
+      MIKROTIK_USERNAME: "lantern"
+      MIKROTIK_PASSWORD: "replace-me"
+      MIKROTIK_ALLOW_INVALID_CERTIFICATE: "false"
+      TELEGRAM_BOT_TOKEN: "replace-me"
+      TELEGRAM_CHAT_ID: "123456789"
+      LANTERN_POLL_INTERVAL_SECONDS: "15"
+    volumes:
+      - lantern-data:/data
+
+volumes:
+  lantern-data:
