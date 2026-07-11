@@ -1,3 +1,4 @@
+using Lantern;
 using Lantern.Configuration;
 using Lantern.Devices;
 using Lantern.MikroTik;
@@ -83,6 +84,7 @@ builder.Services
     });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PollStatus>();
+builder.Services.AddSingleton<HealthHandler>();
 builder.Services.AddHostedService<DeviceMonitorJob>();
 
 var app = builder.Build();
@@ -90,27 +92,7 @@ var app = builder.Build();
 await app.Services.GetRequiredService<DeviceRepository>().InitializeAsync();
 
 app.MapGet("/", () => Results.RazorSlice<Home>());
-app.MapGet("/health", async (
-    DeviceRepository repository,
-    PollStatus pollStatus,
-    Microsoft.Extensions.Options.IOptions<LanternOptions> options,
-    TimeProvider timeProvider,
-    CancellationToken cancellationToken) =>
-{
-    var databaseAccessible = await repository.IsAccessibleAsync(cancellationToken);
-    var snapshot = pollStatus.GetSnapshot();
-    var maximumAge = TimeSpan.FromSeconds(Math.Max(options.Value.PollIntervalSeconds * 3, 60));
-    var pollIsRecent = snapshot.LastSuccessfulPollUtc is { } lastSuccessfulPollUtc &&
-        timeProvider.GetUtcNow() - lastSuccessfulPollUtc <= maximumAge;
-    var healthy = databaseAccessible && pollIsRecent;
-    var content = $"""
-        status={((healthy ? "healthy" : "unhealthy"))}
-        database_accessible={databaseAccessible.ToString().ToLowerInvariant()}
-        last_successful_poll_utc={snapshot.LastSuccessfulPollUtc?.ToString("O") ?? "never"}
-        most_recent_poll_succeeded={snapshot.MostRecentPollSucceeded.ToString().ToLowerInvariant()}
-        """;
-
-    return Results.Text(content, statusCode: healthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
-});
+app.MapGet("/health", (HealthHandler handler, CancellationToken cancellationToken) =>
+    handler.HandleAsync(cancellationToken));
 
 app.Run();
