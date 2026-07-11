@@ -10,5 +10,5 @@ internal sealed class TelegramOptions
 
     public long ChatId { get; set; }
 
-    public string? PublicBaseUrl { get; set; }
+    public string PublicBaseUrl { get; set; } = "";
 }

@@ -38,7 +38,7 @@ Lantern is configured entirely through environment variables.
 | `MIKROTIK_ALLOW_INVALID_CERTIFICATE` | No | `false` | Set to `true` for a self-signed router certificate. This disables certificate validation. |
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Token issued by BotFather. |
 | `TELEGRAM_CHAT_ID` | Yes | — | Non-zero numeric ID of the chat that receives alerts. |
-| `LANTERN_PUBLIC_BASE_URL` | No | — | Public dashboard URL included in Telegram alerts. |
+| `LANTERN_PUBLIC_BASE_URL` | Yes | — | Public dashboard URL included in Telegram alerts, for example `https://lantern.example.com`. |
 | `LANTERN_POLL_INTERVAL_SECONDS` | No | `15` | DHCP lease polling interval. The minimum is 5 seconds. |
 | `DATABASE_PATH` | No | `/data/lantern.db` in the container | SQLite database path. |
 

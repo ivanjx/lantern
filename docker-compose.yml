@@ -12,6 +12,7 @@ services:
       MIKROTIK_ALLOW_INVALID_CERTIFICATE: "false"
       TELEGRAM_BOT_TOKEN: "replace-me"
       TELEGRAM_CHAT_ID: "123456789"
+      LANTERN_PUBLIC_BASE_URL: "http://localhost:8080"
       LANTERN_POLL_INTERVAL_SECONDS: "15"
     volumes:
       - lantern-data:/data

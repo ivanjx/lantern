@@ -30,13 +30,14 @@ builder.Services
         options.ChatId = long.TryParse(builder.Configuration[TelegramOptions.ChatIdEnvironmentVariable], out var chatId) ?
             chatId :
             0;
-        options.PublicBaseUrl = builder.Configuration[TelegramOptions.PublicBaseUrlEnvironmentVariable];
+        options.PublicBaseUrl = builder.Configuration[TelegramOptions.PublicBaseUrlEnvironmentVariable] ?? "";
     })
     .Validate(options => !string.IsNullOrWhiteSpace(options.BotToken), "TELEGRAM_BOT_TOKEN is required.")
     .Validate(options => options.ChatId != 0, "TELEGRAM_CHAT_ID must be a non-zero integer.")
-    .Validate(options => string.IsNullOrWhiteSpace(options.PublicBaseUrl) ||
-        Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out _),
-        "LANTERN_PUBLIC_BASE_URL must be an absolute URL when set.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.PublicBaseUrl),
+        "LANTERN_PUBLIC_BASE_URL is required.")
+    .Validate(options => Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out _),
+        "LANTERN_PUBLIC_BASE_URL must be an absolute URL.")
     .ValidateOnStart();
 builder.Services.AddHttpClient<ITelegramClient, TelegramClient>();
 builder.Services.AddSingleton<TelegramNotificationService>();
