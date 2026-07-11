@@ -2,9 +2,17 @@ name: Build and publish container
 
 on:
   pull_request:
+    paths:
+      - Lantern/**
+      - Lantern.Tests/**
+      - lantern.slnx
   push:
     branches:
       - master
+    paths:
+      - Lantern/**
+      - Lantern.Tests/**
+      - lantern.slnx
   workflow_dispatch:
 
 env:
