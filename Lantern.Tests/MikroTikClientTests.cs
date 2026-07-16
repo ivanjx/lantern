@@ -70,6 +70,18 @@ public sealed class MikroTikClientTests
         Assert.IsType<MikroTikInvalidResponseErrorResult>(result);
     }
 
+    [Fact]
+    public async Task GetActiveLeasesAsync_ReturnsCanceledWhenCancellationIsRequested()
+    {
+        var client = CreateClient(new CanceledHttpMessageHandler());
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        var result = await client.GetActiveLeasesAsync(cancellationTokenSource.Token);
+
+        Assert.IsType<CanceledServiceResult>(result);
+    }
+
     private static MikroTikClient CreateClient(HttpMessageHandler handler)
     {
         var options = Options.Create(new MikroTikOptions
@@ -106,5 +118,13 @@ public sealed class MikroTikClientTests
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
             });
         }
+    }
+
+    private sealed class CanceledHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromCanceled<HttpResponseMessage>(cancellationToken);
     }
 }

@@ -55,6 +55,20 @@ public sealed class DeviceRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetAsync_ReturnsCanceledWhenCancellationIsRequested()
+    {
+        var repository = CreateRepository();
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        var result = await repository.GetAsync(
+            "AA:BB:CC:DD:EE:FF",
+            cancellationTokenSource.Token);
+
+        Assert.IsType<CanceledRepositoryResult>(result);
+    }
+
+    [Fact]
     public async Task GetRegistryAsync_SortsUnknownFirstThenMostRecentlySeenAndCountsStatuses()
     {
         var repository = CreateRepository();

@@ -66,6 +66,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             var device = await reader.ReadAsync(cancellationToken) ? ReadDevice(reader) : null;
             return new RepositoryResult<Device?>(device);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
+        }
         catch (SqliteException exception)
         {
             _logger.LogError(exception, "Failed to read device {MacAddress}", normalized);
@@ -102,6 +106,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             }
 
             return new RepositoryResult<DeviceRegistry>(new DeviceRegistry(devices, unknownCount, trustedCount));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {
@@ -164,6 +172,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             await transaction.CommitAsync(cancellationToken);
             return new SuccessRepositoryResult();
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
+        }
         catch (SqliteException exception)
         {
             _logger.LogError(exception, "Failed to delete device {MacAddress}", normalized);
@@ -202,6 +214,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             await command.ExecuteNonQueryAsync(cancellationToken);
             return new SuccessRepositoryResult();
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
+        }
         catch (SqliteException exception)
         {
             _logger.LogError(exception, "Failed to upsert observation for device {MacAddress}", normalized);
@@ -219,6 +235,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             command.Parameters.AddWithValue("$key", InitialScanCompletedKey);
             var value = await command.ExecuteScalarAsync(cancellationToken) as string;
             return new RepositoryResult<bool>(string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {
@@ -240,6 +260,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             command.Parameters.AddWithValue("$key", InitialScanCompletedKey);
             await command.ExecuteNonQueryAsync(cancellationToken);
             return new SuccessRepositoryResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {
@@ -278,6 +302,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             await transaction.CommitAsync(cancellationToken);
             return new SuccessRepositoryResult();
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
+        }
         catch (SqliteException exception)
         {
             _logger.LogError(exception, "Failed to record notification delivery for device {MacAddress}", normalized);
@@ -301,6 +329,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             command.CommandText = "SELECT 1 FROM app_state WHERE key = $key;";
             command.Parameters.AddWithValue("$key", NotificationPendingKeyPrefix + normalized);
             return new RepositoryResult<bool>(await command.ExecuteScalarAsync(cancellationToken) is not null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {
@@ -326,6 +358,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             command.Parameters.AddWithValue("$key", NotificationPendingKeyPrefix + normalized);
             await command.ExecuteNonQueryAsync(cancellationToken);
             return new SuccessRepositoryResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {
@@ -379,6 +415,10 @@ internal sealed class DeviceRepository(IOptions<DatabaseOptions> _options, ILogg
             return await command.ExecuteNonQueryAsync(cancellationToken) == 0 ?
                 new DeviceNotFoundRepositoryErrorResult() :
                 new SuccessRepositoryResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledRepositoryResult();
         }
         catch (SqliteException exception)
         {

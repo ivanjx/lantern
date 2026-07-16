@@ -56,6 +56,10 @@ internal sealed class TelegramClient : ITelegramClient
             _logger.LogError(exception, "Telegram request timed out");
             return new ErrorServiceResult();
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledServiceResult();
+        }
         catch (HttpRequestException exception)
         {
             _logger.LogError(exception, "Telegram request failed");

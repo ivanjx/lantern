@@ -29,6 +29,25 @@ public sealed class TelegramClientTests
             handler.RequestUri?.AbsoluteUri);
     }
 
+    [Fact]
+    public async Task SendMessageAsync_ReturnsCanceledWhenCancellationIsRequested()
+    {
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+        var client = new TelegramClient(
+            new HttpClient(new RecordingHandler()),
+            Options.Create(new TelegramOptions
+            {
+                BotToken = "8757487465:secret",
+                ChatId = 123
+            }),
+            NullLogger<TelegramClient>.Instance);
+
+        var result = await client.SendMessageAsync("Hello", cancellationTokenSource.Token);
+
+        Assert.IsType<CanceledServiceResult>(result);
+    }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }

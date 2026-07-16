@@ -16,6 +16,11 @@ internal sealed class DeviceDetectionService(
         {
             var mikroTikResult = await _mikroTikClient.GetActiveLeasesAsync(cancellationToken);
 
+            if (mikroTikResult is CanceledServiceResult)
+            {
+                return mikroTikResult;
+            }
+
             if (mikroTikResult is not MikroTikLeasesResult leasesResult)
             {
                 _pollStatus.RecordFailure(GetMikroTikFailure(mikroTikResult));
@@ -27,6 +32,11 @@ internal sealed class DeviceDetectionService(
                 .Select(lease => new DeviceObservation(lease.MacAddress, lease.Address, lease.HostName, observedAtUtc))
                 .ToArray();
             var detectionResult = await ProcessAsync(observations, cancellationToken);
+
+            if (detectionResult is CanceledServiceResult)
+            {
+                return detectionResult;
+            }
 
             if (detectionResult is not DeviceDetectionSuccessResult)
             {
@@ -40,7 +50,7 @@ internal sealed class DeviceDetectionService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            throw;
+            return new CanceledServiceResult();
         }
         catch (Exception exception)
         {
@@ -58,7 +68,7 @@ internal sealed class DeviceDetectionService(
 
         if (stateResult is not RepositoryResult<bool> state)
         {
-            return new ErrorServiceResult();
+            return FromRepositoryFailure(stateResult);
         }
 
         var notifications = new List<Device>();
@@ -69,22 +79,25 @@ internal sealed class DeviceDetectionService(
 
             if (existingResult is not RepositoryResult<Device?> existing)
             {
-                return new ErrorServiceResult();
+                return FromRepositoryFailure(existingResult);
             }
 
             var upsertResult = await _repository.UpsertObservationAsync(observation, cancellationToken);
 
             if (upsertResult is not SuccessRepositoryResult)
             {
-                return new ErrorServiceResult();
+                return FromRepositoryFailure(upsertResult);
             }
 
             if (state.Value && existing.Value is null)
             {
-                if (await _repository.MarkNotificationPendingAsync(observation.MacAddress, cancellationToken)
-                    is not SuccessRepositoryResult)
+                var pendingResult = await _repository.MarkNotificationPendingAsync(
+                    observation.MacAddress,
+                    cancellationToken);
+
+                if (pendingResult is not SuccessRepositoryResult)
                 {
-                    return new ErrorServiceResult();
+                    return FromRepositoryFailure(pendingResult);
                 }
 
                 _logger.LogInformation("New unknown device detected: {MacAddress}", observation.MacAddress);
@@ -96,14 +109,14 @@ internal sealed class DeviceDetectionService(
 
                 if (pendingResult is not RepositoryResult<bool> pending)
                 {
-                    return new ErrorServiceResult();
+                    return FromRepositoryFailure(pendingResult);
                 }
 
                 var deviceResult = await _repository.GetAsync(observation.MacAddress, cancellationToken);
 
                 if (deviceResult is not RepositoryResult<Device?> deviceRepositoryResult)
                 {
-                    return new ErrorServiceResult();
+                    return FromRepositoryFailure(deviceResult);
                 }
 
                 var device = deviceRepositoryResult.Value;
@@ -126,7 +139,7 @@ internal sealed class DeviceDetectionService(
 
             if (completionResult is not SuccessRepositoryResult)
             {
-                return new ErrorServiceResult();
+                return FromRepositoryFailure(completionResult);
             }
 
             _logger.LogInformation("Initial baseline scan completed with {DeviceCount} devices", observations.Count);
@@ -135,10 +148,16 @@ internal sealed class DeviceDetectionService(
         return new DeviceDetectionSuccessResult(notifications, !state.Value);
     }
 
+    private static ServiceResult FromRepositoryFailure(RepositoryResult result) =>
+        result is CanceledRepositoryResult ?
+            new CanceledServiceResult() :
+            new ErrorServiceResult();
+
     private static string GetMikroTikFailure(ServiceResult result) => result switch
     {
         MikroTikUnauthorizedErrorResult => "MikroTik authentication failed",
         MikroTikInvalidResponseErrorResult => "MikroTik returned an invalid response",
+        CanceledServiceResult => "MikroTik poll was canceled",
         ErrorServiceResult => "MikroTik is unavailable",
         _ => "MikroTik poll failed"
     };

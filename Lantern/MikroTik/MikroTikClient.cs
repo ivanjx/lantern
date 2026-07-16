@@ -82,6 +82,10 @@ internal sealed class MikroTikClient : IMikroTikClient
             _logger.LogError(exception, "MikroTik request timed out");
             return new ErrorServiceResult();
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new CanceledServiceResult();
+        }
         catch (HttpRequestException exception)
         {
             _logger.LogError(exception, "MikroTik request failed");
